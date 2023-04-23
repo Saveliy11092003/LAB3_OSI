@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 
+
 #define ERROR -1
 #define SUCCESS 0
 
@@ -13,7 +14,7 @@ enum CONSTANTS {
     READ_AND_WRITE_PERMISSIONS = 0777,
     MAX_PATH_FILE = 4096,
     POSITION_FILE_PATH = 1,
-    BLOCK_SIZE = 4096,
+    BLOCK_SIZE = 2,
     ZERO_OFFSET_RELATIVE_TO_SEEK_SET = 0,
     ONE_READ_FROM_FILE = 1,
     ZERO = 0,
@@ -53,28 +54,45 @@ void print_error(const char *file_path) {
     fprintf(stderr, "%s : %s\n", file_path, strerror(errno));
 }
 
-int write_buffer_in_new_file(FILE *source_file, FILE *new_file, char *buffer, int size_buffer, int number_block) {
-    int return_value_fseek = fseek(source_file, (number_block * BLOCK_SIZE), SEEK_SET);
-    if (return_value_fseek != 0) {
-        fprintf(stderr, "Error in fseek from write_buffer_in_new_file, %s \n", strerror(errno));
+int write_buffer_in_new_file(FILE *source_file, FILE *new_file, int count_block, int number_block, int size_block) {
+    char *buffer = (char *) malloc(size_block * sizeof(char));
+    if (buffer == NULL) {
+        fprintf(stderr, "Memory allocation error in write_buffer_in_new_file, %s \n", strerror(errno));
         return ERROR;
     }
-    int return_value_fread = fread(buffer, size_buffer, ONE_READ_FROM_FILE, source_file);
+    int return_value_fseek;
+    if(count_block - number_block != 0){
+        return_value_fseek = fseek(source_file, -((number_block+1) * BLOCK_SIZE), SEEK_END);
+    }
+    else {
+        return_value_fseek = fseek(source_file, 0, SEEK_SET);
+    }
+    if (return_value_fseek != 0) {
+        fprintf(stderr, "Error in fseek from write_buffer_in_new_file, %s \n", strerror(errno));
+        free(buffer);
+        return ERROR;
+    }
+    int return_value_fread = fread(buffer, size_block, ONE_READ_FROM_FILE, source_file);
     if (return_value_fread != ONE_READ_FROM_FILE) {
         fprintf(stderr, "Error in fread from write_buffer_in_new_file, %s \n", strerror(errno));
+        free(buffer);
         return ERROR;
     }
     reverse_string(buffer);
-    return_value_fseek = fseek(new_file, ZERO_OFFSET_RELATIVE_TO_SEEK_SET, SEEK_SET);
+
+    return_value_fseek = fseek(new_file, BLOCK_SIZE*number_block, SEEK_SET);
     if (return_value_fseek != 0) {
         fprintf(stderr, "Error in fseek from write_buffer_in_new_file, %s \n", strerror(errno));
+        free(buffer);
         return ERROR;
     }
-    size_t return_value_fwrite = fwrite(buffer, size_buffer, ONE_READ_FROM_FILE, new_file);
+    size_t return_value_fwrite = fwrite(buffer, size_block, ONE_READ_FROM_FILE, new_file);
     if (return_value_fwrite != ONE_READ_FROM_FILE) {
         fprintf(stderr, "Error in write from write_buffer_in_new_file, %s \n", strerror(errno));
+        free(buffer);
         return ERROR;
     }
+    free(buffer);
     return SUCCESS;
 }
 
@@ -92,29 +110,20 @@ int close_files(FILE* source_file, FILE* new_file){
 int copy_file(char *path_source_file, char *path_new_file) {
     FILE *source_file;
     FILE *new_file;
-    source_file = fopen(path_source_file, "r");
+    source_file = fopen(path_source_file, "rb");
     if (source_file == NULL) {
         print_error(path_source_file);
         return ERROR;
     }
-    new_file = fopen(path_new_file, "w");
+    new_file = fopen(path_new_file, "wb");
     if (new_file == NULL) {
         print_error(path_new_file);
-        return ERROR;
-    }
-    char *buffer = (char *) malloc(BLOCK_SIZE * sizeof(char));
-    if (buffer == NULL) {
-        fprintf(stderr, "Memory allocation error in function copy_file, %s \n", strerror(errno));
-        if(close_files(source_file, new_file) == ERROR){
-            return ERROR;
-        }
         return ERROR;
     }
 
     int return_value_fseek = fseek(source_file, ZERO_OFFSET_RELATIVE_TO_SEEK_SET, SEEK_END);
     if (return_value_fseek != 0) {
         fprintf(stderr, "Error in fseek from copy_file, %s \n", strerror(errno));
-        free(buffer);
         if(close_files(source_file, new_file) == ERROR){
             return ERROR;
         }
@@ -123,7 +132,6 @@ int copy_file(char *path_source_file, char *path_new_file) {
     int file_size = ftell(source_file);
     if (file_size == -1L) {
         fprintf(stderr, "Error in ftell from copy_file, %s \n", strerror(errno));
-        free(buffer);
         if(close_files(source_file, new_file) == ERROR){
             return ERROR;
         }
@@ -134,10 +142,9 @@ int copy_file(char *path_source_file, char *path_new_file) {
     int number_block;
     int return_value_write_buffer_in_new_file;
     for (number_block = ZERO; number_block < count_blocks; number_block++) {
-        return_value_write_buffer_in_new_file = write_buffer_in_new_file(source_file, new_file, buffer, BLOCK_SIZE,
-                                                                         number_block);
+        return_value_write_buffer_in_new_file = write_buffer_in_new_file(source_file, new_file, count_blocks,
+                                                                         number_block, BLOCK_SIZE);
         if (return_value_write_buffer_in_new_file == ERROR) {
-            free(buffer);
             if(close_files(source_file, new_file) == ERROR){
                 return ERROR;
             }
@@ -145,10 +152,9 @@ int copy_file(char *path_source_file, char *path_new_file) {
         }
     }
     if (remainder > ZERO) {
-        return_value_write_buffer_in_new_file = write_buffer_in_new_file(source_file, new_file, buffer, remainder,
-                                                                         number_block);
+        return_value_write_buffer_in_new_file = write_buffer_in_new_file(source_file, new_file, count_blocks,
+                                                                         number_block, remainder);
         if (return_value_write_buffer_in_new_file == ERROR) {
-            free(buffer);
             if(close_files(source_file, new_file) == ERROR){
                 return ERROR;
             }
@@ -156,7 +162,6 @@ int copy_file(char *path_source_file, char *path_new_file) {
         }
     }
 
-    free(buffer);
     if (close_files(source_file, new_file) == ERROR){
         return ERROR;
     }
