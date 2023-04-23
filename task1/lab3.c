@@ -14,9 +14,8 @@ enum CONSTANTS {
     READ_AND_WRITE_PERMISSIONS = 0777,
     MAX_PATH_FILE = 4096,
     POSITION_FILE_PATH = 1,
-    BLOCK_SIZE = 2,
+    BLOCK_SIZE = 20,
     ZERO_OFFSET_RELATIVE_TO_SEEK_SET = 0,
-    ONE_READ_FROM_FILE = 1,
     ZERO = 0,
     MAX_PATH_DIRECTORY = 4096,
     FILE_NAME_MAX = 256
@@ -55,7 +54,7 @@ void print_error(const char *file_path) {
 }
 
 int write_buffer_in_new_file(FILE *source_file, FILE *new_file, int count_block, int number_block, int size_block) {
-    char *buffer = (char *) malloc(size_block * sizeof(char));
+    char *buffer = (char *) calloc(size_block, sizeof(char));
     if (buffer == NULL) {
         fprintf(stderr, "Memory allocation error in write_buffer_in_new_file, %s \n", strerror(errno));
         return ERROR;
@@ -72,13 +71,12 @@ int write_buffer_in_new_file(FILE *source_file, FILE *new_file, int count_block,
         free(buffer);
         return ERROR;
     }
-    int return_value_fread = fread(buffer, size_block, ONE_READ_FROM_FILE, source_file);
-    if (return_value_fread != ONE_READ_FROM_FILE) {
+    int return_value_fread = fread(buffer, sizeof(char), size_block, source_file);
+    if (return_value_fread != size_block) {
         fprintf(stderr, "Error in fread from write_buffer_in_new_file, %s \n", strerror(errno));
         free(buffer);
         return ERROR;
     }
-    reverse_string(buffer);
 
     return_value_fseek = fseek(new_file, BLOCK_SIZE*number_block, SEEK_SET);
     if (return_value_fseek != 0) {
@@ -86,12 +84,10 @@ int write_buffer_in_new_file(FILE *source_file, FILE *new_file, int count_block,
         free(buffer);
         return ERROR;
     }
-    size_t return_value_fwrite = fwrite(buffer, size_block, ONE_READ_FROM_FILE, new_file);
-    if (return_value_fwrite != ONE_READ_FROM_FILE) {
-        fprintf(stderr, "Error in write from write_buffer_in_new_file, %s \n", strerror(errno));
-        free(buffer);
-        return ERROR;
+    for(int i=0;i<size_block;i++){
+        fprintf(new_file, "%c", buffer[size_block-i-1]);
     }
+    
     free(buffer);
     return SUCCESS;
 }
